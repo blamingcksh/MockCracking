@@ -1,0 +1,14 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width="512" height="512" role="img" aria-label="MockCracking">
+  <defs>
+    <mask id="mc-mask-1">
+      <rect width="100" height="100" fill="#fff"/>
+      <path d="M8 36 L30 30 L40 44 L52 34 L62 46 L92 38"
+        fill="none" stroke="#000" stroke-width="5.5"
+        stroke-linejoin="miter" stroke-linecap="butt"/>
+    </mask>
+  </defs>
+  <rect width="100" height="100" rx="22" fill="#0A0A0A"/>
+  <path d="M22 80 L22 26 L50 58 L78 26 L78 80"
+    fill="none" stroke="#F5F1E8" stroke-width="13"
+    stroke-linejoin="miter" stroke-linecap="butt" mask="url(#mc-mask-1)"/>
+</svg>
