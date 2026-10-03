@@ -1,0 +1,273 @@
+/* ============================================================
+   Dashboard, builder and analytics
+   ============================================================ */
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.stat {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 45%), var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+  box-shadow: var(--sh-1);
+  transition: transform var(--med), border-color var(--med), box-shadow var(--med);
+}
+
+.stat::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  opacity: 0.55;
+}
+
+.stat:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-line);
+  box-shadow: var(--sh-2);
+}
+
+/* ---------------- chart ---------------- */
+
+.trend {
+  width: 100%;
+  height: 220px;
+  display: block;
+  overflow: visible;
+}
+
+.trend .axis { stroke: rgba(255, 255, 255, 0.07); stroke-width: 1; }
+
+.trend .area { fill: url(#trendFill); }
+
+.trend .line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 6px 16px rgba(109, 124, 255, 0.5));
+}
+
+.trend .pt {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.trend .pt-label { fill: var(--muted); font-size: 10.5px; }
+
+.stat .label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-weight: 650;
+}
+
+.stat .value {
+  font-size: 29px;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat .delta {
+  font-size: 12.5px;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+/* ---------------- chart ---------------- */
+
+.trend {
+  width: 100%;
+  height: 220px;
+  display: block;
+  overflow: visible;
+}
+
+.trend .axis { stroke: rgba(255, 255, 255, 0.07); stroke-width: 1; }
+
+.trend .line {
+  fill: none;
+  stroke: url(#trendStroke);
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 6px 16px rgba(109, 124, 255, 0.5));
+}
+
+.trend .pt {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  transition: r var(--fast);
+}
+
+.trend .pt:hover { r: 6; }
+
+.trend .pt-label { fill: var(--muted); font-size: 10.5px; }
+
+/* ---------------- bars ---------------- */
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr) 86px;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 11px;
+}
+
+.bar-row > div:first-child {
+  font-size: 13.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-track {
+  height: 9px;
+  background: var(--surface-3);
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 600ms var(--ease);
+  box-shadow: 0 0 12px -2px rgba(109, 124, 255, 0.7);
+}
+
+.bar-fill.good { background: linear-gradient(90deg, #3ee0a4, var(--good)); box-shadow: 0 0 12px -2px rgba(52, 211, 153, 0.7); }
+.bar-fill.bad { background: linear-gradient(90deg, #fb7185, #e11d48); box-shadow: 0 0 12px -2px rgba(251, 113, 133, 0.7); }
+
+.bar-val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* ---------------- chapter table ---------------- */
+
+.chapter-name {
+  display: inline-block;
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* ---------------- focus list ---------------- */
+
+.focus-list { display: grid; gap: 10px; }
+
+.focus-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  transition: border-color var(--med), transform var(--med), background var(--med);
+}
+
+.focus-item:hover {
+  border-color: var(--accent-line);
+  background: var(--surface-3);
+  transform: translateX(2px);
+}
+
+.focus-item .subj { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+.focus-item > div:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  font-size: 15px;
+}
+
+/* ---------------- paper builder ---------------- */
+
+.slot-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+  transition: border-color var(--med), background var(--med);
+}
+
+.slot-card:hover { border-color: var(--line-strong); }
+
+.slot-card.short {
+  border-color: rgba(251, 113, 133, 0.45);
+  background: var(--bad-soft);
+}
+
+.slot-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.slot-head strong { font-size: 13.5px; }
+.slot-head .muted { font-size: 12px; }
+
+.slot-q {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13.5px;
+}
+
+.slot-q button {
+  background: var(--surface-3);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  box-shadow: none;
+}
+
+.slot-q button:hover { color: var(--bad); border-color: rgba(251, 113, 133, 0.5); }
+
+.slot-q:first-of-type { border-top: 0; }
+.slot-q > div:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+.slot-q .muted { font-size: 12px; white-space: nowrap; }
+
+.slot-q button {
+  padding: 3px 9px;
+  font-size: 12px;
+  border-radius: 7px;
+  flex: none;
+}
