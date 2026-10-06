@@ -31,7 +31,7 @@ export function setNotFound(handler) { notFound = handler; }
 
 export function currentPath() {
   const raw = location.hash.replace(/^#/, '');
-  return raw.startsWith('/') ? raw : '/dashboard';
+  return raw.startsWith('/') ? raw : '/tests';
 }
 
 export function navigate(path) {
@@ -70,8 +70,8 @@ function paintNav(path) {
     const href = a.getAttribute('href') || '';
     const target = href.replace(/^#/, '');
     const active = target === path
-      || (target !== '/dashboard' && path.startsWith(target))
-      || (target === '/dashboard' && path === '/dashboard');
+      || (target !== '/tests' && path.startsWith(target))
+      || (target === '/tests' && (path === '/tests' || path === '/new'));
     a.classList.toggle('active', active);
   }
 }

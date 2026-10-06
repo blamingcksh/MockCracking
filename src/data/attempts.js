@@ -2,23 +2,25 @@ import { get, getAll, put } from '../db.js';
 import { scoreQuestion, scorePaper, isAnswered } from '../format/marks.js';
 import { applyAttemptToRatings } from '../rating/elo.js';
 
-export async function createAttempt(paper, spec) {
+export async function createAttempt(test, spec, customDeadline = null) {
   const now = Date.now();
   // The blueprint is snapshotted onto the attempt so a later edit to the
   // paper or to the format cannot retroactively change how this was scored.
-  const slotSpecs = spec.slots.map(s => ({ ...s, paperNumber: spec.paperNumber }));
+  const slotSpecs = spec.slots.map(s => ({ ...s, paperNumber: spec.paperNumber || test.paperNumber }));
+  const deadline = customDeadline || (now + spec.durationMins * 60000);
   const attempt = {
     id: `a-${now.toString(36)}-${crypto.randomUUID().slice(0, 8)}`,
-    paperId: paper.id,
-    name: paper.name,
-    formatId: paper.formatId,
-    paperNumber: paper.paperNumber,
+    testId: test.id,
+    paperId: test.id,
+    name: test.name,
+    formatId: test.formatId || 'custom',
+    paperNumber: test.paperNumber || 1,
     durationMins: spec.durationMins,
     startedAt: now,
-    deadline: now + spec.durationMins * 60000,
+    deadline,
     submittedAt: null,
     durationSec: null,
-    slots: paper.slots,
+    slots: test.slots,
     slotSpecs,
     responses: {},
     touched: {},

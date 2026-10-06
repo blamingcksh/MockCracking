@@ -15,9 +15,9 @@
   padding: 11px 16px;
   margin-bottom: 16px;
   border-radius: var(--r-lg);
-  background: rgba(18, 21, 30, 0.82);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  /* Solid for the same reason as #topnav: backdrop-filter + the Home Screen
+     status bar material renders as an unreadable smear on recent iPadOS. */
+  background: var(--surface);
   border: 1px solid var(--line-strong);
   box-shadow: var(--sh-2);
   flex-wrap: wrap;

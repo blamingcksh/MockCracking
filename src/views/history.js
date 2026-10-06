@@ -5,34 +5,37 @@ import { listAttempts } from '../data/attempts.js';
 import { chapterTable, bandFor } from '../rating/elo.js';
 import { navigate } from '../router.js';
 
-export default async function dashboardView(host) {
+export default async function historyView(host) {
   const [profile, questions, allAttempts] = await Promise.all([
     getProfile(), getAll('questions'), listAttempts(),
   ]);
   const byId = new Map(questions.map(q => [q.id, q]));
   const submitted = allAttempts
     .filter(a => a.status === 'submitted')
-    .sort((a, b) => a.submittedAt - b.submittedAt);
+    .sort((a, b) => (a.submittedAt || 0) - (b.submittedAt || 0));
   const chapters = await chapterTable();
 
-  host.appendChild(h('h1', { textContent: 'Dashboard' }));
+  host.appendChild(h('h1', { textContent: 'History & analytics' }));
   host.appendChild(h('p', {
     className: 'sub',
     textContent: submitted.length
-      ? `${submitted.length} submitted attempt(s) · ${questions.length} questions in bank`
-      : 'No submitted attempts yet. Build a paper and sit it to start tracking.',
+      ? `${submitted.length} submitted attempt(s) across your tests`
+      : 'No submitted attempts yet. Schedule a test and sit it to start tracking.',
   }));
 
-  host.appendChild(statRow(profile, submitted, questions));
+  // Top Section: Table of All Test Attempts
+  host.appendChild(card('All test attempts', attemptList(allAttempts)));
 
-  if (submitted.length >= 2) host.appendChild(card('Score trend', trendChart(submitted)));
-  if (submitted.length) host.appendChild(card('Subject marks', aggregateBars(submitted, 'subject')));
-  if (submitted.length) host.appendChild(card('Marks by question type', aggregateBars(submitted, 'type')));
-  if (submitted.length) host.appendChild(card('Accuracy by model difficulty', difficultyBars(submitted, byId)));
-  if (submitted.length) host.appendChild(card('Pace — time spent vs target', paceCard(submitted, questions)));
-  host.appendChild(card('Chapter breakdown', chapterTableView(chapters, profile)));
-  host.appendChild(card('Where to work next', focusPanel(chapters)));
-  host.appendChild(card('Attempts', attemptList(allAttempts)));
+  if (submitted.length) {
+    host.appendChild(statRow(profile, submitted, questions));
+    if (submitted.length >= 2) host.appendChild(card('Score trend', trendChart(submitted)));
+    host.appendChild(card('Subject marks', aggregateBars(submitted, 'subject')));
+    host.appendChild(card('Marks by question type', aggregateBars(submitted, 'type')));
+    host.appendChild(card('Accuracy by model difficulty', difficultyBars(submitted, byId)));
+    host.appendChild(card('Pace — time spent vs target', paceCard(submitted, questions)));
+    host.appendChild(card('Chapter breakdown', chapterTableView(chapters, profile)));
+    host.appendChild(card('Where to work next', focusPanel(chapters)));
+  }
 }
 
 function card(title, body) {
@@ -65,8 +68,8 @@ function statRow(profile, submitted, questions) {
   const totalMax = submitted.reduce((n, a) => n + (a.maxScore || 0), 0);
   row.appendChild(stat('Attempts', String(submitted.length),
     totalMax ? `average ${pct(totalScore, totalMax)}` : ''));
-  row.appendChild(stat('Questions seen', String(questions.filter(q => (q.seenCount || 0) > 0).length), `${questions.length} in bank`));
-  row.appendChild(stat('Chapters tracked', String(Object.keys(profile.chapterAbility).length), 'per-chapter ability'));
+  row.appendChild(stat('Questions seen', String(questions.filter(q => (q.seenCount || 0) > 0).length), `${questions.length} in active tests`));
+  row.appendChild(stat('Chapters tracked', String(Object.keys(profile.chapterAbility || {}).length), 'per-chapter ability'));
   return row;
 }
 
@@ -241,26 +244,26 @@ function focusPanel(chapters) {
 }
 
 function attemptList(all) {
-  if (!all.length) return h('div', { className: 'empty', textContent: 'Nothing yet.' });
+  if (!all.length) return h('div', { className: 'empty', textContent: 'No attempts taken yet.' });
   const body = h('tbody');
-  for (const a of all.slice(0, 12)) {
+  for (const a of all) {
     body.appendChild(h('tr', null,
       h('td', { textContent: a.name }),
-      h('td', { textContent: a.status === 'submitted' ? 'submitted' : 'in progress' }),
+      h('td', { textContent: a.status === 'submitted' ? 'Submitted' : 'In progress' }),
       h('td', { className: 'num', textContent: a.totalScore === null ? '—' : `${a.totalScore}/${a.maxScore}` }),
       h('td', { textContent: a.status === 'submitted' ? pct(a.totalScore, a.maxScore) : '—' }),
       h('td', { textContent: dateTime(a.submittedAt || a.startedAt) }),
       h('td', null, h('button', {
-        className: 'ghost',
-        textContent: a.status === 'submitted' ? 'Result' : 'Resume',
+        className: a.status === 'submitted' ? 'ghost' : 'active',
+        textContent: a.status === 'submitted' ? 'View analysis' : 'Resume',
         onClick: () => navigate(a.status === 'submitted' ? `/result/${a.id}` : `/exam/${a.id}`),
       }))));
   }
   return h('div', { className: 'scroll' },
     h('table', null,
       h('thead', null, h('tr', null,
-        h('th', { textContent: 'paper' }), h('th', { textContent: 'status' }),
-        h('th', { className: 'num', textContent: 'score' }), h('th', { textContent: '%' }),
-        h('th', { textContent: 'when' }), h('th', null))),
+        h('th', { textContent: 'Test / Paper' }), h('th', { textContent: 'Status' }),
+        h('th', { className: 'num', textContent: 'Score' }), h('th', { textContent: '%' }),
+        h('th', { textContent: 'When' }), h('th', null))),
       body));
 }

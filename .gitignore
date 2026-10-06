@@ -1,0 +1,4 @@
+# Ignore binaries and OS files
+*.exe
+.DS_Store
+Thumbs.db

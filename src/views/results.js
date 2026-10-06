@@ -1,22 +1,45 @@
-import { h, clear } from '../lib/dom.js';
+import { h, clear, openModal } from '../lib/dom.js';
 import { renderMath } from '../lib/mathrender.js';
 import { SUBJECT_LABEL, TYPE_LABEL, clock, dateTime, pct } from '../lib/format.js';
 import { getAll } from '../db.js';
-import { getAttempt, specFor } from '../data/attempts.js';
+import { getAttempt, specFor, createAttempt } from '../data/attempts.js';
+import { getTest } from '../data/tests.js';
 import { renderFigure } from '../assets/figure.js';
 import { navigate } from '../router.js';
-import { answerText } from './bank.js';
+import { describeNumericAnswer } from '../format/numeric.js';
 
-export async function renderAttemptBody(host, attempt, { filter = 'all' } = {}) {
+export function answerText(q) {
+  if (q.type === 'numerical' || q.type === 'stem_subquestion') return describeNumericAnswer(q.numericalAnswer);
+  if (q.type === 'match_list') return q.matchAnswer || '—';
+  return (q.correctOptions || []).join(', ') || '—';
+}
+
+export async function renderAttemptBody(host, attempt, { filter = 'all', chapterFilter = '' } = {}) {
   const questions = await getAll('questions');
   const byId = new Map(questions.map(q => [q.id, q]));
 
-  host.appendChild(h('div', { className: 'row', style: { marginBottom: '14px' } },
-    h('button', { className: 'ghost', textContent: '← Dashboard', onClick: () => navigate('/dashboard') }),
-    h('button', { className: 'ghost', textContent: 'Review mistakes', onClick: () => navigate(`/review/${attempt.id}`) })));
+  // Top action bar
+  host.appendChild(h('div', { className: 'row', style: { marginBottom: '14px', alignItems: 'center' } },
+    h('button', { className: 'ghost', textContent: '← Tests', onClick: () => navigate('/tests') }),
+    h('button', { className: 'ghost', textContent: 'History & analytics', onClick: () => navigate('/history') }),
+    h('span', { className: 'grow' }),
+    h('button', {
+      className: 'active',
+      textContent: 'Retake test',
+      onClick: async () => {
+        const test = await getTest(attempt.testId || attempt.paperId);
+        if (!test) {
+          alert('Original test definition not found.');
+          return;
+        }
+        promptRetake(test);
+      },
+    })));
 
   const score = attempt.totalScore ?? 0;
   const max = attempt.maxScore ?? 0;
+
+  // Hero card
   host.appendChild(h('div', { className: 'card score-hero' },
     h('div', null,
       h('div', { className: 'score-big', textContent: `${score}` }),
@@ -30,7 +53,7 @@ export async function renderAttemptBody(host, attempt, { filter = 'all' } = {}) 
           h('div', { className: 'muted', textContent: `was ${Number(attempt.abilityBefore).toFixed(0)} (Δ ${(attempt.abilityAfter - attempt.abilityBefore).toFixed(0)})` }))
       : null));
 
-  // Per subject and per section.
+  // Subject and section summary table
   const subjects = [...new Set((attempt.slotSpecs || []).map(s => s.subject))];
   const summary = h('table', null,
     h('thead', null, h('tr', null,
@@ -51,14 +74,57 @@ export async function renderAttemptBody(host, attempt, { filter = 'all' } = {}) 
       }))));
   host.appendChild(h('div', { className: 'card scroll' }, summary));
 
-  // Question detail.
-  const filters = filter === 'all'
-    ? null
-    : {
-      wrong: r => r.marks < r.max,
-      partial: r => r.marks > 0 && r.marks < r.max,
-      blank: r => !r.answered,
-    }[filter];
+  // Question detail list with filters
+  const answers = attempt.scoresByQuestion || {};
+  const counts = {
+    all: Object.keys(answers).length,
+    wrong: Object.values(answers).filter(r => r.marks < r.max).length,
+    partial: Object.values(answers).filter(r => r.marks > 0 && r.marks < r.max).length,
+    blank: Object.values(answers).filter(r => !r.answered).length,
+  };
+
+  const filterBar = h('div', { className: 'row', style: { margin: '20px 0 12px 0', alignItems: 'center', gap: '8px' } });
+
+  const filterKeys = [
+    { key: 'all', label: `All (${counts.all})` },
+    { key: 'wrong', label: `Wrong (${counts.wrong})` },
+    { key: 'partial', label: `Partial (${counts.partial})` },
+    { key: 'blank', label: `Unanswered (${counts.blank})` },
+  ];
+
+  for (const item of filterKeys) {
+    filterBar.appendChild(h('button', {
+      className: filter === item.key ? 'active' : 'ghost',
+      textContent: item.label,
+      onClick: () => {
+        clear(host);
+        renderAttemptBody(host, attempt, { filter: item.key, chapterFilter });
+      },
+    }));
+  }
+
+  // Chapter filter dropdown
+  const allChapters = [...new Set(Object.keys(answers).map(id => byId.get(id)).filter(Boolean).map(q => q.chapter))].sort();
+  if (allChapters.length > 1) {
+    const chapSel = h('select', { style: { marginLeft: 'auto' } },
+      h('option', { value: '', textContent: 'All chapters' }),
+      ...allChapters.map(c => h('option', { value: c, textContent: c })));
+    chapSel.value = chapterFilter;
+    chapSel.addEventListener('change', () => {
+      clear(host);
+      renderAttemptBody(host, attempt, { filter, chapterFilter: chapSel.value });
+    });
+    filterBar.appendChild(chapSel);
+  }
+
+  host.appendChild(filterBar);
+
+  const filterFn = {
+    all: () => true,
+    wrong: r => r.marks < r.max,
+    partial: r => r.marks > 0 && r.marks < r.max,
+    blank: r => !r.answered,
+  }[filter] || (() => true);
 
   const rows = [];
   for (const slotEntry of attempt.slots || []) {
@@ -68,29 +134,45 @@ export async function renderAttemptBody(host, attempt, { filter = 'all' } = {}) 
       const q = byId.get(qid);
       const result = (attempt.scoresByQuestion || {})[qid];
       if (!q || !result) return;
-      if (filters && !filters(result)) return;
+      if (!filterFn(result)) return;
+      if (chapterFilter && q.chapter !== chapterFilter) return;
       rows.push({ q, spec, result, number: i + 1 });
     });
-  }
-
-  if (filter !== 'all') {
-    host.appendChild(h('div', { className: 'row', style: { marginBottom: '10px' } },
-      ['all', 'wrong', 'partial', 'blank'].map(k => h('button', {
-        className: filter === k ? '' : 'ghost',
-        textContent: k === 'all' ? 'All questions' : k,
-        onClick: () => {
-          clear(host);
-          renderAttemptBody(host, attempt, { filter: k });
-        },
-      }))));
   }
 
   const list = h('div');
   for (const row of rows) {
     list.appendChild(questionCard(row, attempt));
   }
-  if (!rows.length) list.appendChild(h('div', { className: 'empty', textContent: 'No questions in this filter.' }));
+  if (!rows.length) {
+    list.appendChild(h('div', { className: 'card empty-box', textContent: 'No questions match the selected filter.' }));
+  }
   host.appendChild(list);
+
+  function promptRetake(test) {
+    const modalContent = h('div', null,
+      h('p', { textContent: `Retaking "${test.name}". Choose how you would like to sit this attempt:` }),
+      h('div', { className: 'row', style: { marginTop: '16px', gap: '10px' } },
+        h('button', {
+          textContent: 'Start now (full duration)',
+          onClick: async () => {
+            clear(document.getElementById('modal-root'));
+            const deadline = Date.now() + (test.durationMins || 180) * 60000;
+            const newAttempt = await createAttempt(test, test.spec, deadline);
+            navigate(`/exam/${newAttempt.id}`);
+          },
+        }),
+        h('button', {
+          className: 'ghost',
+          textContent: 'Back to tests',
+          onClick: () => {
+            clear(document.getElementById('modal-root'));
+            navigate('/tests');
+          },
+        })));
+
+    openModal(`Retake — ${test.name}`, modalContent, [{ label: 'Cancel', ghost: true }]);
+  }
 }
 
 function questionCard({ q, spec, result, number }, attempt) {

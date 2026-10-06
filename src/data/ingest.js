@@ -49,6 +49,7 @@ export async function analyse(questions) {
   const duplicates = [];
   const updates = [];
   const missingAssets = new Set();
+  const placement = new Map();
 
   questions.forEach((raw, index) => {
     const id = raw && typeof raw.id === 'string' ? raw.id.trim() : '';
@@ -64,12 +65,17 @@ export async function analyse(questions) {
       invalid.push({ index, id, errors: result.errors });
       return;
     }
+    if (id) {
+      const paper = raw.paper === null || raw.paper === undefined ? null : Number(raw.paper);
+      const section = raw.section === null || raw.section === undefined ? null : Number(raw.section);
+      placement.set(id, { paper: Number.isFinite(paper) ? paper : null, section: Number.isFinite(section) ? section : null });
+    }
     if (prior) updates.push(id);
     for (const ref of referencedAssets(result.value)) missingAssets.add(ref);
     records.push(result.value);
   });
 
-  return { ok: invalid.length === 0 && duplicates.length === 0, records, invalid, duplicates, updates, missingAssets: [...missingAssets] };
+  return { ok: invalid.length === 0 && duplicates.length === 0, records, invalid, duplicates, updates, missingAssets: [...missingAssets], placement };
 }
 
 export async function commit(records) {

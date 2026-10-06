@@ -102,10 +102,13 @@ body {
   gap: 6px;
   padding: 0 22px;
   height: 58px;
-  background: rgba(10, 11, 16, 0.72);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  /* Opaque on purpose. A backdrop-filter here gets composited with the
+     translucent status-bar material that iPadOS draws over the web view in
+     Home Screen web apps, which washes the bar out until the links are
+     unreadable. A solid fill has no such interaction. */
+  background: var(--bg);
   border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
 }
 
 #topnav .brand {
@@ -461,9 +464,9 @@ td.num, th.num {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(5, 6, 10, 0.72);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  /* No backdrop-filter: this covers the full viewport including the status-bar
+     strip, where iPadOS composites its own material over the top. */
+  background: rgba(5, 6, 10, 0.88);
   animation: fade 160ms var(--ease);
 }
 

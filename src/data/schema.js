@@ -7,6 +7,16 @@ export const DIFFICULTIES = ['easy', 'medium', 'hard', 'brutal'];
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
+// Fallback +/- scheme when an older upload does not carry printed marks.
+// Anything newer must emit explicit `marks`/`negative` (see the Gemini prompt).
+export const DEFAULT_SCHEME = {
+  single_correct: { marks: 4, negative: 1 },
+  multi_correct: { marks: 4, negative: 1 },
+  match_list: { marks: 4, negative: 1 },
+  numerical: { marks: 4, negative: 0 },
+  stem_subquestion: { marks: 2, negative: 0 },
+};
+
 export function isRangeAnswer(v) {
   return v !== null && typeof v === 'object'
     && Number.isFinite(v.min) && Number.isFinite(v.max);
@@ -52,13 +62,6 @@ export function validateQuestion(input, existing = {}) {
 
   if (typeof q.unit !== 'string' || !q.unit.trim()) errors.push('unit is required');
   if (typeof q.chapter !== 'string' || !q.chapter.trim()) errors.push('chapter is required');
-
-  if (q.paperHint !== null && q.paperHint !== undefined && ![1, 2].includes(Number(q.paperHint))) {
-    errors.push('paperHint must be 1, 2 or null');
-  }
-  if (q.sectionHint !== null && q.sectionHint !== undefined && !(Number.isInteger(q.sectionHint) && q.sectionHint >= 1)) {
-    errors.push('sectionHint must be a positive integer or null');
-  }
 
   const type = q.type;
 
@@ -114,6 +117,12 @@ export function validateQuestion(input, existing = {}) {
   const weight = q.chapterWeight === undefined || q.chapterWeight === null ? 1.0 : q.chapterWeight;
   if (!Number.isFinite(weight) || weight < 0.05 || weight > 1.5) errors.push('chapterWeight must be in [0.05, 1.5]');
 
+  const fallback = DEFAULT_SCHEME[type] || { marks: 4, negative: 1 };
+  const marks = q.marks === undefined || q.marks === null ? fallback.marks : Number(q.marks);
+  const negative = q.negative === undefined || q.negative === null ? fallback.negative : Number(q.negative);
+  if (!Number.isFinite(marks) || marks <= 0) errors.push('marks must be a positive number');
+  if (!Number.isFinite(negative) || negative < 0) errors.push('negative must be a non-negative number');
+
   validateFigure(q.figure, 'figure', errors, false);
   validateFigure(q.solutionFigure, 'solutionFigure', errors, false);
   if (q.optionFigures && typeof q.optionFigures === 'object') {
@@ -132,8 +141,6 @@ export function validateQuestion(input, existing = {}) {
     unit: q.unit,
     chapter: q.chapter,
     type,
-    paperHint: q.paperHint === undefined ? null : (q.paperHint === null ? null : Number(q.paperHint)),
-    sectionHint: q.sectionHint === undefined ? null : (q.sectionHint === null ? null : Number(q.sectionHint)),
     groupId: q.groupId || null,
     stem: q.stem,
     options: q.options || null,
@@ -147,6 +154,8 @@ export function validateQuestion(input, existing = {}) {
     qElo: Math.round(q.qElo),
     targetTimeMins: q.targetTimeMins,
     difficulty: q.difficulty,
+    marks,
+    negative,
     chapterWeight: weight,
     tags: Array.isArray(q.tags) ? q.tags : [],
     hint: q.hint || null,
@@ -161,6 +170,10 @@ export function validateQuestion(input, existing = {}) {
     status: q.status || existing.status || 'active',
     createdAt: existing.createdAt || Date.now(),
   };
+  // Legacy installs stored paperHint/sectionHint on the record; drop them so
+  // the placement hints are used only at upload->paper seeding time.
+  delete record.paperHint;
+  delete record.sectionHint;
   return { ok: true, errors: [], value: record };
 }
 

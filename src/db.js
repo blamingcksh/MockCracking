@@ -1,10 +1,10 @@
-export const DB_NAME = 'mockcracking';
+export const DB_NAME = 'mockcracking-v2';
 export const DB_VERSION = 1;
 
 export const STORES = {
-  questions: { keyPath: 'id', indexes: ['subject', 'chapter', 'type', 'unit'] },
-  papers: { keyPath: 'id', indexes: ['formatId'] },
-  attempts: { keyPath: 'id', indexes: ['paperId', 'submittedAt'] },
+  questions: { keyPath: 'id', indexes: ['subject', 'chapter', 'type', 'unit', 'testId'] },
+  tests: { keyPath: 'id', indexes: ['scheduledAt', 'createdAt'] },
+  attempts: { keyPath: 'id', indexes: ['testId', 'paperId', 'submittedAt'] },
   assets: { keyPath: 'tag', indexes: ['kind'] },
   profile: { keyPath: 'key', indexes: [] },
 };

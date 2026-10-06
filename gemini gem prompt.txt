@@ -81,6 +81,9 @@ QUESTION OBJECT
   "qElo":          <integer in [800, 2550]>,
   "targetTimeMins": <float 0.5-30>,
   "difficulty":    "easy" | "medium" | "hard" | "brutal",
+  "marks":         <positive number, the printed + marks for this question>,
+  "negative":      <non-negative number, the printed wrong-answer deduction;
+                   0 when the section has no negative marking>,
   "chapterWeight": <0.05-1.5>,
   "tags":          [<2-5 tags from TAG VOCAB>],
   "hint":          "<optional 1 line>" | null,
@@ -135,8 +138,10 @@ Omit it (empty array) unless the source prints that.
 PAPER REALITY — how real JEE papers are built
 ─────────────────────────────────────────────────────────────────────────────────────────────────
 1. SECTION ASSIGNMENT. `paper` and `section` must reflect where the question
-   actually sits in the printed paper, because the app auto-assembles sections
-   from these hints. 2026 blueprint (all three subjects identical):
+   actually sits in the printed paper. The app uses these two fields to place
+   each question into the matching blueprint slot of that exam, and then asks
+   you to sit exactly this paper — so a wrong section corrupts the paper's
+   structure. 2026 blueprint (all three subjects identical):
      Paper 1 — S1 single_correct(4) · S2 multi_correct(4) · S3 numerical(4)
                · S4 match_list(4)
      Paper 2 — S1 single_correct(4) · S2 multi_correct(5) · S3 numerical(5)
@@ -149,6 +154,10 @@ PAPER REALITY — how real JEE papers are built
                numerical(5). `paper` is 1, section is 1 for A and 2 for B.
    If the source paper does not match any of these, still classify by the
    question's own type and set `paper`/`section` to the nearest blueprint slot.
+   `marks` and `negative` must be the printed values for each question; every
+   question in the same printed section carries the same pair, because the app
+   builds one scored section per (subject, section, type, marks, negative)
+   group and there is NO fixed question count or total-marks target anymore.
 2. DIFFICULTY ESCALATION. Within a printed section, question numbers ascend in
    difficulty. Your `qElo` MUST ascend with the printed question number. Do not
    emit a later question with a lower qElo than an earlier one in the same
@@ -476,6 +485,8 @@ COMPLETE EXAMPLE
       "qElo": 1450,
       "targetTimeMins": 4,
       "difficulty": "easy",
+      "marks": 4,
+      "negative": 1,
       "chapterWeight": 1.0,
       "tags": ["rotation", "recall"],
       "hint": "Use the standard moment of inertia for a solid sphere.",
@@ -506,6 +517,8 @@ COMPLETE EXAMPLE
       "qElo": 1350,
       "targetTimeMins": 3,
       "difficulty": "easy",
+      "marks": 4,
+      "negative": 1,
       "chapterWeight": 0.6,
       "tags": ["limits", "recall"],
       "hint": null,
@@ -552,6 +565,8 @@ COMPLETE EXAMPLE
       "qElo": 1700,
       "targetTimeMins": 7,
       "difficulty": "medium",
+      "marks": 4,
+      "negative": 1,
       "chapterWeight": 0.9,
       "tags": ["thermo", "application", "visualization"],
       "hint": "Identify each symbol by what it is defined to equal.",
@@ -582,6 +597,8 @@ COMPLETE EXAMPLE
       "qElo": 2050,
       "targetTimeMins": 9,
       "difficulty": "brutal",
+      "marks": 4,
+      "negative": 0,
       "chapterWeight": 1.0,
       "tags": ["magnetic", "analysis", "sanity-check"],
       "hint": null,

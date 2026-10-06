@@ -3,6 +3,7 @@ import { renderMath } from '../lib/mathrender.js';
 import { clock, SUBJECT_LABEL, TYPE_LABEL } from '../lib/format.js';
 import { getAll } from '../db.js';
 import { getAttempt, saveResponse, submitAttempt, specFor } from '../data/attempts.js';
+import { getTest, testScheduleStatus } from '../data/tests.js';
 import { renderFigure } from '../assets/figure.js';
 import { navigate, setCleanup } from '../router.js';
 import { isAnswered } from '../format/marks.js';
@@ -12,6 +13,18 @@ export default async function runnerView(host, params) {
   if (!attempt) { host.appendChild(h('div', { className: 'empty', textContent: 'Attempt not found.' })); return; }
 
   if (attempt.status === 'submitted') { navigate(`/result/${attempt.id}`); return; }
+
+  const test = await getTest(attempt.testId || attempt.paperId);
+  if (test && test.scheduleEnabled) {
+    const sched = testScheduleStatus(test);
+    if (sched.status === 'locked') {
+      host.appendChild(h('div', { className: 'card empty-box', style: { margin: '40px auto', maxWidth: '500px' } },
+        h('h2', { textContent: 'Test is locked' }),
+        h('p', { className: 'muted', textContent: `This exam unlocks at ${new Date(sched.startsAt).toLocaleString()}.` }),
+        h('button', { textContent: 'Back to tests', onClick: () => navigate('/tests') })));
+      return;
+    }
+  }
 
   const questions = await getAll('questions');
   const byId = new Map(questions.map(q => [q.id, q]));
