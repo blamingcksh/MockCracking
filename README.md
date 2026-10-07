@@ -21,7 +21,8 @@ Then open <http://localhost:8000>.
 ## Workflow
 
 1. **Upload & Schedule (`#/new`)**:
-   - Paste the JSON returned from Gemini (using `gemini gem prompt.txt`).
+   - Box 1: paste the Prompt 1 questions JSON (using `gemini prompt 1 - questions.txt`).
+   - Box 2 (appears after Box 1 validates, optional): paste the Prompt 2 coordinate patch (using `gemini prompt 2 - coordinates.txt`). Matched by question `id`; unknown IDs ignored, bad boxes block with a message. Leave empty for text-only.
    - If a paste contains both Paper 1 and Paper 2, MockCracking automatically separates them into individual tests.
    - Choose whether to schedule the test:
      - **Schedule OFF**: Attempt anytime with full duration.
