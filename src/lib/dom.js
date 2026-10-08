@@ -8,6 +8,7 @@ export function h(tag, props = null, ...children) {
       if (key === 'className') el.className = value;
       else if (key === 'textContent') el.textContent = String(value);
       else if (key === 'style' && typeof value === 'object') Object.assign(el.style, value);
+      else if (key === 'dataset' && typeof value === 'object') Object.assign(el.dataset, value);
       else if (key.startsWith('on') && typeof value === 'function') el.addEventListener(key.slice(2).toLowerCase(), value);
       else el[key] = value;
     }

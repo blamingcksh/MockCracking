@@ -11,24 +11,50 @@ export const STORES = {
 
 let dbPromise = null;
 
-export function openDb() {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      for (const [name, spec] of Object.entries(STORES)) {
-        const store = db.objectStoreNames.contains(name)
-          ? req.transaction.objectStore(name)
-          : db.createObjectStore(name, { keyPath: spec.keyPath });
-        for (const idx of spec.indexes) {
-          if (!store.indexNames.contains(idx)) store.createIndex(idx, idx, { unique: false });
-        }
+function createStoresAndIndexes(db, transaction) {
+  for (const [name, spec] of Object.entries(STORES)) {
+    const store = db.objectStoreNames.contains(name)
+      ? transaction.objectStore(name)
+      : db.createObjectStore(name, { keyPath: spec.keyPath });
+    for (const idx of spec.indexes) {
+      if (!store.indexNames.contains(idx)) {
+        store.createIndex(idx, idx, { unique: false });
       }
+    }
+  }
+}
+
+function openWithTargetVersion(version) {
+  return new Promise((resolve, reject) => {
+    const req = version ? indexedDB.open(DB_NAME, version) : indexedDB.open(DB_NAME);
+    req.onupgradeneeded = () => {
+      createStoresAndIndexes(req.result, req.transaction);
     };
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onerror = () => reject(req.error || new Error('Failed to open database'));
+    req.onblocked = () => {
+      console.warn('Database upgrade blocked — please close other tabs of MockCracking if open');
+    };
   });
+}
+
+export function openDb() {
+  if (dbPromise) return dbPromise;
+  dbPromise = (async () => {
+    // Open without version parameter first to inspect existing database
+    const db = await openWithTargetVersion();
+
+    // Check if any required object store is missing
+    const missingStores = Object.keys(STORES).filter(s => !db.objectStoreNames.contains(s));
+    if (missingStores.length === 0) {
+      return db;
+    }
+
+    // A store is missing (e.g. from an older schema version); upgrade database
+    const nextVersion = (db.version || 1) + 1;
+    db.close();
+    return openWithTargetVersion(nextVersion);
+  })();
   return dbPromise;
 }
 

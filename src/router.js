@@ -31,15 +31,19 @@ export function setNotFound(handler) { notFound = handler; }
 
 export function currentPath() {
   const raw = location.hash.replace(/^#/, '');
-  return raw.startsWith('/') ? raw : '/tests';
+  if (!raw.startsWith('/')) {
+    location.hash = '#/tests';
+    return '/tests';
+  }
+  return raw;
 }
 
-export function navigate(path) {
+export async function navigate(path) {
   if (currentPath() === path) return resolve();
   location.hash = path;
 }
 
-export function resolve() {
+export async function resolve() {
   const path = currentPath();
   const host = document.getElementById('view');
   runCleanup();
@@ -50,19 +54,38 @@ export function resolve() {
     const params = {};
     r.names.forEach((name, i) => { params[name] = decodeURIComponent(m[i + 1]); });
     host.textContent = '';
-    r.handler(host, params);
     paintNav(path);
+    try {
+      await r.handler(host, params);
+    } catch (err) {
+      console.error(`Error rendering route "${path}":`, err);
+      host.innerHTML = `
+        <div class="card" style="margin: 24px auto; max-width: 640px; border-color: var(--bad); padding: 24px;">
+          <h2 style="color: var(--bad); margin-top: 0;">Error loading page (${path})</h2>
+          <p style="color: var(--text-2); font-size: 14px;">${err.message}</p>
+          <pre style="background: rgba(0,0,0,0.5); padding: 12px; border-radius: 6px; font-size: 12px; overflow: auto; color: var(--text);">${err.stack || err}</pre>
+          <div class="row" style="margin-top: 16px; gap: 8px;">
+            <button class="active" onclick="location.hash='#/tests'; location.reload();">Reload Tests</button>
+            <button class="ghost" onclick="location.hash='#/new'">New Test</button>
+          </div>
+        </div>
+      `;
+    }
     return { path, params, handler: r.handler };
   }
 
   host.textContent = '';
-  notFound(host);
   paintNav(path);
+  try {
+    await notFound(host);
+  } catch (err) {
+    console.error('notFound handler failed', err);
+  }
   return { path, params: {}, handler: notFound };
 }
 
 export function onNavigate(fn) {
-  window.addEventListener('hashchange', () => { const r = resolve(); if (fn) fn(r); });
+  window.addEventListener('hashchange', async () => { const r = await resolve(); if (fn) fn(r); });
 }
 
 function paintNav(path) {

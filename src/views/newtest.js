@@ -1,26 +1,29 @@
 import { h, clear } from '../lib/dom.js';
-import { parsePaste, parseCoordsPaste, mergeCoords, analyse } from '../data/ingest.js';
-import { referencedAssets } from '../data/schema.js';
+import { parsePaste, analyse } from '../data/ingest.js';
+import { extractFigureSlots, applyCrops } from '../data/figslots.js';
 import { deriveSpecFromUpload, createTestsFromUpload } from '../data/tests.js';
-import { attachAsset, getAsset } from '../assets/store.js';
+import { attachAsset } from '../assets/store.js';
+import { openCropper } from './cropper.js';
 import { navigate } from '../router.js';
 
 export default async function newTestView(host) {
   host.appendChild(h('div', { className: 'row', style: { marginBottom: '16px', alignItems: 'center' } },
     h('div', null,
       h('h1', { textContent: 'New test' }),
-      h('p', { className: 'sub', textContent: 'Box 1: paste Prompt 1 questions JSON. Box 2 (appears after Box 1 validates): paste Prompt 2 coordinate patch — optional.' })),
+      h('p', { className: 'sub', textContent: 'Paste the JSON from the Gemini parser prompt. If diagrams are present, upload the exam PDF to crop them in order.' })),
     h('span', { className: 'grow' }),
     h('button', { className: 'ghost', textContent: '← Cancel', onClick: () => navigate('/tests') })));
 
   const state = {
     analysis: null,
+    rawQuestions: [],
+    slots: [],
+    slotsErrors: [],
+    slotsWarnings: [],
+    crops: {},
+    pdfFile: null,
     papers: [],
-    unresolvedAssets: [],
     scheduleConfigs: {},
-    effectiveRecords: [],
-    effectiveMissingRefs: [],
-    coordsError: null,
   };
 
   const nameInput = h('input', {
@@ -30,19 +33,12 @@ export default async function newTestView(host) {
   });
 
   const textarea = h('textarea', {
-    placeholder: 'Box 1: paste Prompt 1 questions JSON here (array of questions or { "questions": [...] })...',
+    placeholder: 'Paste Gemini questions JSON here (array of questions or { "questions": [...] })...',
     style: { minHeight: '220px', fontFamily: 'monospace', fontSize: '13px' },
   });
 
-  const coordsTextarea = h('textarea', {
-    placeholder: 'Box 2: paste Prompt 2 coordinate JSON here ({ "coords": [{ id, figure, ... }] })...',
-    style: { minHeight: '140px', fontFamily: 'monospace', fontSize: '13px' },
-  });
-  const coordsStatus = h('div');
-  const coordsCard = h('div', { className: 'card', style: { display: 'none', marginTop: '16px' } });
-
   const summaryBox = h('div');
-  const assetCard = h('div', { className: 'card', style: { display: 'none' } });
+  const figureCard = h('div', { className: 'card', style: { display: 'none', marginTop: '16px' } });
   const scheduleBox = h('div');
   const actionRow = h('div', { className: 'row', style: { marginTop: '20px' } });
 
@@ -64,76 +60,44 @@ export default async function newTestView(host) {
       h('span', { textContent: 'Test name' }),
       nameInput),
     h('label', { className: 'field', style: { marginTop: '14px' } },
-      h('span', { textContent: 'Box 1 — Question paper JSON (Prompt 1)' }),
+      h('span', { textContent: 'Question paper JSON (from Gemini prompt)' }),
       textarea),
     summaryBox);
 
-  coordsCard.appendChild(h('h3', { textContent: 'Box 2 — Coordinate JSON patch (Prompt 2, optional)' }));
-  coordsCard.appendChild(h('p', { className: 'muted', textContent: 'Paste the Prompt 2 output to add figure crops onto the Box 1 questions. Matched by question id. Leave empty for text-only. Test can be created from Box 1 alone.' }));
-  coordsCard.appendChild(h('label', { className: 'field', style: { marginTop: '10px' } },
-    h('span', { textContent: 'Coordinate JSON' }),
-    coordsTextarea));
-  coordsCard.appendChild(coordsStatus);
-  coordsCard.appendChild(h('div', { className: 'row', style: { marginTop: '8px' } },
-    h('button', {
-      className: 'ghost', textContent: 'Clear Box 2', onClick: () => { coordsTextarea.value = ''; processCoords(); },
-    })));
-
   host.appendChild(mainCard);
-  host.appendChild(coordsCard);
-  host.appendChild(assetCard);
+  host.appendChild(figureCard);
   host.appendChild(scheduleBox);
   host.appendChild(actionRow);
 
   textarea.addEventListener('input', debounce(processInput, 300));
   textarea.addEventListener('blur', processInput);
-  coordsTextarea.addEventListener('input', debounce(processCoords, 300));
-  coordsTextarea.addEventListener('blur', processCoords);
-
-  function effectiveRefsFromRecords(records) {
-    const refs = new Set();
-    for (const q of records || []) {
-      for (const ref of referencedAssets(q)) refs.add(ref);
-    }
-    return [...refs];
-  }
-
-  async function refreshDerivedView() {
-    // Re-derive papers / assets / schedule from effective records.
-    if (!state.analysis || !state.analysis.ok) return;
-    const records = state.effectiveRecords && state.effectiveRecords.length ? state.effectiveRecords : state.analysis.records;
-    const { papers, unplaced } = deriveSpecFromUpload(records, state.analysis.placement);
-    state.papers = papers;
-    state.effectiveMissingRefs = effectiveRefsFromRecords(records);
-
-    // Check figure assets
-    state.unresolvedAssets = await checkMissingAssets(state.effectiveMissingRefs);
-
-    renderSummary(papers, unplaced);
-    await renderAssets();
-    renderScheduleControls(papers);
-
-    updateCreateDisabled();
-  }
 
   function updateCreateDisabled() {
-    const baseOk = !!(state.analysis && state.analysis.ok && state.papers.length);
-    createBtn.disabled = !baseOk || !!state.coordsError || state.unresolvedAssets.length > 0;
+    const baseOk = !!(state.analysis && state.analysis.ok && state.papers.length && state.slotsErrors.length === 0);
+    if (!baseOk) {
+      createBtn.disabled = true;
+      return;
+    }
+    if (state.slots.length > 0) {
+      createBtn.disabled = !state.pdfFile;
+    } else {
+      createBtn.disabled = false;
+    }
   }
 
   async function processInput() {
     const raw = textarea.value.trim();
     if (!raw) {
       state.analysis = null;
+      state.rawQuestions = [];
+      state.slots = [];
+      state.slotsErrors = [];
+      state.slotsWarnings = [];
+      state.crops = {};
+      state.pdfFile = null;
       state.papers = [];
-      state.unresolvedAssets = [];
-      state.effectiveRecords = [];
-      state.effectiveMissingRefs = [];
-      state.coordsError = null;
       clear(summaryBox);
-      clear(coordsStatus);
-      coordsCard.style.display = 'none';
-      assetCard.style.display = 'none';
+      figureCard.style.display = 'none';
       clear(scheduleBox);
       createBtn.disabled = true;
       return;
@@ -145,82 +109,43 @@ export default async function newTestView(host) {
       clear(summaryBox);
       summaryBox.appendChild(h('div', { className: 'banner err', style: { marginTop: '12px' }, textContent: parsed.error }));
       createBtn.disabled = true;
-      coordsCard.style.display = 'none';
-      assetCard.style.display = 'none';
+      figureCard.style.display = 'none';
       clear(scheduleBox);
       return;
     }
 
+    state.rawQuestions = parsed.questions;
+
+    // Check figure slots
+    const slotRes = extractFigureSlots(parsed.questions);
+    state.slots = slotRes.slots;
+    state.slotsErrors = slotRes.errors;
+    state.slotsWarnings = slotRes.warnings;
+
+    // Schema and placement analysis
     const a = await analyse(parsed.questions);
     state.analysis = a;
 
-    if (!a.ok) {
+    if (!a.ok || state.slotsErrors.length > 0) {
       clear(summaryBox);
       const errs = [];
       if (a.invalid.length) errs.push(`${a.invalid.length} question(s) failed validation.`);
       if (a.duplicates.length) errs.push(`Duplicate IDs: ${a.duplicates.map(d => d.id).join(', ')}.`);
+      if (state.slotsErrors.length) errs.push(`Figure code errors: ${state.slotsErrors.join('; ')}.`);
       summaryBox.appendChild(h('div', { className: 'banner err', style: { marginTop: '12px' }, textContent: errs.join(' ') }));
       createBtn.disabled = true;
-      coordsCard.style.display = 'none';
-      assetCard.style.display = 'none';
+      figureCard.style.display = 'none';
       clear(scheduleBox);
       return;
     }
 
-    // Box 1 valid → reveal Box 2, then merge (Box 2 optional).
-    state.effectiveRecords = a.records;
-    coordsCard.style.display = 'block';
-    await processCoords();
-  }
+    // Derive papers
+    const { papers, unplaced } = deriveSpecFromUpload(a.records, a.placement);
+    state.papers = papers;
 
-  async function processCoords() {
-    clear(coordsStatus);
-    state.coordsError = null;
-    if (!state.analysis || !state.analysis.ok) {
-      updateCreateDisabled();
-      return;
-    }
-    const raw = coordsTextarea.value.trim();
-    if (!raw) {
-      state.effectiveRecords = state.analysis.records;
-      await refreshDerivedView();
-      coordsStatus.appendChild(h('p', { className: 'muted', style: { fontSize: '13px', margin: '8px 0 0 0' }, textContent: 'Box 2 empty — using Box 1 questions as-is (text-only until coords pasted).' }));
-      return;
-    }
-
-    const parsed = parseCoordsPaste(raw);
-    if (parsed.error) {
-      state.coordsError = parsed.error;
-      state.effectiveRecords = state.analysis.records;
-      coordsStatus.appendChild(h('div', { className: 'banner err', style: { marginTop: '12px' }, textContent: parsed.error }));
-      await refreshDerivedView();
-      // refreshDerivedView re-enables; re-apply coords block.
-      updateCreateDisabled();
-      createBtn.disabled = true;
-      return;
-    }
-
-    const m = mergeCoords(state.analysis.records, parsed.entries);
-    if (m.errors.length) {
-      state.coordsError = m.errors.map(e => `${e.id}: ${e.errors.join('; ')}`).join(' | ');
-      state.effectiveRecords = state.analysis.records;
-      coordsStatus.appendChild(h('div', {
-        className: 'banner err', style: { marginTop: '12px' },
-        textContent: `Coordinate errors — fix or Clear Box 2 to proceed with Box 1 alone: ${state.coordsError}`,
-      }));
-      await refreshDerivedView();
-      createBtn.disabled = true;
-      return;
-    }
-
-    state.effectiveRecords = m.merged;
-    await refreshDerivedView();
-
-    const bits = [`${m.applied}/${parsed.entries.length} IDs matched`];
-    if (m.figuresAdded) bits.push(`${m.figuresAdded} figure refs applied`);
-    else bits.push('no figure refs (all null / text-only)');
-    const msg = bits.join(' · ') + (m.unknownIds.length ? ` · unknown IDs ignored: ${m.unknownIds.join(', ')}` : '');
-    coordsStatus.appendChild(h('div', { className: m.unknownIds.length ? 'banner' : 'banner ok', style: { marginTop: '12px' }, textContent: msg }));
+    renderSummary(papers, unplaced);
+    renderFigureSection();
+    renderScheduleControls(papers);
     updateCreateDisabled();
   }
 
@@ -237,6 +162,9 @@ export default async function newTestView(host) {
 
     tags.push(h('span', { className: 'tag', textContent: `${totalQ} questions total` }));
     tags.push(h('span', { className: 'tag', textContent: `${totalMarks} marks total` }));
+    if (state.slots.length > 0) {
+      tags.push(h('span', { className: 'tag', textContent: `${state.slots.length} diagrams (F1..F${state.slots.length})` }));
+    }
     if (papers.length > 1) {
       tags.push(h('span', { className: 'tag badge-live', textContent: `${papers.length} papers detected (will create ${papers.length} tests)` }));
     }
@@ -247,41 +175,90 @@ export default async function newTestView(host) {
     if (unplaced.length) {
       wrap.appendChild(h('p', { className: 'muted', style: { margin: '8px 0 0 0', color: 'var(--err)' }, textContent: `${unplaced.length} question(s) could not be placed due to missing section.` }));
     }
+    if (state.slotsWarnings.length) {
+      wrap.appendChild(h('p', { className: 'muted', style: { margin: '8px 0 0 0', color: 'var(--warn)' }, textContent: state.slotsWarnings.join(' ') }));
+    }
     summaryBox.appendChild(wrap);
   }
 
-  async function renderAssets() {
-    clear(assetCard);
-    if (!state.unresolvedAssets.length) {
-      assetCard.style.display = 'none';
+  function renderFigureSection() {
+    clear(figureCard);
+    if (!state.slots.length) {
+      figureCard.style.display = 'none';
       return;
     }
 
-    assetCard.style.display = 'block';
-    assetCard.appendChild(h('h3', { textContent: 'Attach referenced figure assets' }));
-    assetCard.appendChild(h('p', { className: 'muted', textContent: 'This paper references the following images/PDFs. Attach them to enable figures in the exam.' }));
+    figureCard.style.display = 'block';
 
-    const list = h('div', { style: { marginTop: '12px' } });
-    for (const ref of state.unresolvedAssets) {
-      const [source, tag] = ref.split(':');
-      const input = h('input', { type: 'file', accept: source === 'pdf' ? 'application/pdf' : 'image/*' });
-      input.addEventListener('change', async () => {
-        const file = input.files && input.files[0];
-        if (!file) return;
-        try {
-          await attachAsset(tag, file);
-          state.unresolvedAssets = await checkMissingAssets(state.effectiveMissingRefs);
-          await renderAssets();
-          updateCreateDisabled();
-        } catch (err) {
-          alert(`Failed to attach asset: ${err.message}`);
-        }
-      });
-      list.appendChild(h('div', { className: 'row', style: { marginBottom: '8px', alignItems: 'center' } },
-        h('strong', { style: { width: '120px' }, textContent: `${tag} (${source})` }),
-        input));
+    const uniqueQids = new Set(state.slots.map(s => s.qid));
+    figureCard.appendChild(h('h3', { textContent: `Diagrams & Figures (${state.slots.length} detected across ${uniqueQids.size} questions)` }));
+    figureCard.appendChild(h('p', {
+      className: 'muted',
+      textContent: 'Attach the exam PDF to crop each diagram in sequence (F1, F2...). The full-screen cropper will guide you through them automatically.',
+    }));
+
+    const fileInput = h('input', {
+      type: 'file',
+      accept: 'application/pdf',
+      style: { marginTop: '12px' },
+    });
+
+    const statusBox = h('div', { style: { marginTop: '12px' } });
+
+    function updateStatusBox() {
+      clear(statusBox);
+      if (!state.pdfFile) {
+        statusBox.appendChild(h('p', { className: 'muted', textContent: 'Please choose the exam PDF file above.' }));
+        return;
+      }
+
+      const croppedCount = Object.keys(state.crops).length;
+      const total = state.slots.length;
+      const isComplete = croppedCount >= total;
+
+      const infoRow = h('div', { className: 'row', style: { alignItems: 'center', gap: '12px' } },
+        h('span', {
+          className: isComplete ? 'tag badge-live' : 'tag',
+          textContent: `✓ PDF: ${state.pdfFile.name} (${croppedCount}/${total} cropped)`,
+        }),
+        h('button', {
+          className: isComplete ? 'ghost' : 'active',
+          textContent: isComplete ? 'Re-open cropper' : 'Open cropper to crop diagrams',
+          onClick: launchCropper,
+        }));
+
+      statusBox.appendChild(infoRow);
     }
-    assetCard.appendChild(list);
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+      state.pdfFile = file;
+      updateStatusBox();
+      updateCreateDisabled();
+
+      // Launch cropper automatically on file select
+      await launchCropper();
+    });
+
+    figureCard.appendChild(fileInput);
+    figureCard.appendChild(statusBox);
+    updateStatusBox();
+  }
+
+  async function launchCropper() {
+    if (!state.pdfFile || !state.slots.length) return;
+    const res = await openCropper({
+      pdfBlob: state.pdfFile,
+      slots: state.slots,
+      initialCrops: state.crops,
+    });
+
+    if (res && res.crops) {
+      state.crops = res.crops;
+    }
+    renderFigureSection();
+    updateCreateDisabled();
   }
 
   function renderScheduleControls(papers) {
@@ -354,15 +331,29 @@ export default async function newTestView(host) {
   }
 
   createBtn.addEventListener('click', async () => {
-    if (!state.analysis || !state.papers.length || state.coordsError) return;
+    if (!state.analysis || !state.papers.length) return;
+    if (state.slots.length > 0 && !state.pdfFile) {
+      alert('Please upload the test PDF before creating the test.');
+      return;
+    }
+
     createBtn.disabled = true;
     createBtn.textContent = 'Creating...';
 
     try {
+      let finalRecords = state.analysis.records;
+
+      if (state.slots.length > 0 && state.pdfFile) {
+        // Unique asset tag per test to avoid collision across tests
+        const assetTag = `pdf-${Date.now()}`;
+        await attachAsset(assetTag, state.pdfFile);
+        finalRecords = applyCrops(state.analysis.records, state.slots, state.crops, assetTag);
+      }
+
       const baseName = nameInput.value.trim() || 'JEE Test';
-      const result = await createTestsFromUpload({
+      await createTestsFromUpload({
         baseName,
-        records: state.effectiveRecords && state.effectiveRecords.length ? state.effectiveRecords : state.analysis.records,
+        records: finalRecords,
         placement: state.analysis.placement,
         schedules: state.scheduleConfigs,
       });
@@ -374,16 +365,6 @@ export default async function newTestView(host) {
       createBtn.textContent = 'Create & schedule test';
     }
   });
-
-  async function checkMissingAssets(refs) {
-    const missing = [];
-    for (const ref of refs) {
-      const tag = ref.split(':')[1];
-      const found = await getAsset(tag);
-      if (!found) missing.push(ref);
-    }
-    return missing;
-  }
 }
 
 function debounce(fn, ms) {

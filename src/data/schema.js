@@ -26,6 +26,19 @@ function isPlainArray(v) {
   return Array.isArray(v);
 }
 
+function validateBox(box, boxPath, errors) {
+  if (!box || typeof box !== 'object') { errors.push(`${boxPath} is required`); return; }
+  for (const k of ['x', 'y', 'w', 'h']) {
+    if (!Number.isFinite(box[k])) errors.push(`${boxPath}.${k} must be a finite number`);
+  }
+  if (Number.isFinite(box.w) && (box.w <= 0 || box.w > 1)) errors.push(`${boxPath}.w must be in (0,1]`);
+  if (Number.isFinite(box.h) && (box.h <= 0 || box.h > 1)) errors.push(`${boxPath}.h must be in (0,1]`);
+  if (Number.isFinite(box.x) && (box.x < 0 || box.x >= 1)) errors.push(`${boxPath}.x must be in [0,1)`);
+  if (Number.isFinite(box.y) && (box.y < 0 || box.y >= 1)) errors.push(`${boxPath}.y must be in [0,1)`);
+  if (Number.isFinite(box.x) && Number.isFinite(box.w) && box.x + box.w > 1.0001) errors.push(`${boxPath} spills past the right edge`);
+  if (Number.isFinite(box.y) && Number.isFinite(box.h) && box.y + box.h > 1.0001) errors.push(`${boxPath} spills past the bottom edge`);
+}
+
 function validateFigure(fig, path, errors, required = false) {
   if (fig === null || fig === undefined) {
     if (required) errors.push(`${path} is required`);
@@ -37,17 +50,26 @@ function validateFigure(fig, path, errors, required = false) {
   if (fig.source === 'pdf') {
     if (!Number.isInteger(fig.page) || fig.page < 1) errors.push(`${path}.page must be a 1-indexed integer`);
   }
-  const box = fig.box;
-  if (!box || typeof box !== 'object') { errors.push(`${path}.box is required`); return; }
-  for (const k of ['x', 'y', 'w', 'h']) {
-    if (!Number.isFinite(box[k])) errors.push(`${path}.box.${k} must be a finite number`);
+  validateBox(fig.box, `${path}.box`, errors);
+
+  if (fig.parts !== undefined) {
+    if (!Array.isArray(fig.parts) || fig.parts.length === 0) {
+      errors.push(`${path}.parts must be a non-empty array when present`);
+    } else {
+      fig.parts.forEach((p, idx) => {
+        if (!p || typeof p !== 'object') {
+          errors.push(`${path}.parts[${idx}] must be an object`);
+          return;
+        }
+        if (fig.source === 'pdf') {
+          if (!Number.isInteger(p.page) || p.page < 1) {
+            errors.push(`${path}.parts[${idx}].page must be a 1-indexed integer`);
+          }
+        }
+        validateBox(p.box, `${path}.parts[${idx}].box`, errors);
+      });
+    }
   }
-  if (Number.isFinite(box.w) && (box.w <= 0 || box.w > 1)) errors.push(`${path}.box.w must be in (0,1]`);
-  if (Number.isFinite(box.h) && (box.h <= 0 || box.h > 1)) errors.push(`${path}.box.h must be in (0,1]`);
-  if (Number.isFinite(box.x) && (box.x < 0 || box.x >= 1)) errors.push(`${path}.box.x must be in [0,1)`);
-  if (Number.isFinite(box.y) && (box.y < 0 || box.y >= 1)) errors.push(`${path}.box.y must be in [0,1)`);
-  if (Number.isFinite(box.x) && Number.isFinite(box.w) && box.x + box.w > 1.0001) errors.push(`${path}.box spills past the right edge`);
-  if (Number.isFinite(box.y) && Number.isFinite(box.h) && box.y + box.h > 1.0001) errors.push(`${path}.box spills past the bottom edge`);
 }
 
 // Returns { ok, errors:[], value }. `value` is the normalised record to store.

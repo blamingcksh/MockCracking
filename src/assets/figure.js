@@ -25,6 +25,11 @@ export async function pdfPageCount(blob) {
   return doc.numPages;
 }
 
+export async function loadPdfDocFromBlob(blob) {
+  const lib = await pdf();
+  return lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+}
+
 async function pdfDoc(tag) {
   if (!pdfDocs.has(tag)) {
     const asset = await getAsset(tag);
@@ -109,19 +114,83 @@ function missingBox(message) {
   return el;
 }
 
+/**
+ * Calculates pixel layout for rendering single or multi-part figure crops.
+ * All parts are rendered at a uniform scale and stacked vertically.
+ *
+ * @param {Array<{ box: {x,y,w,h}, source: {width, height} }>} partsWithSources
+ * @param {number} hostWidth - Display width available in the DOM
+ * @returns {{ totalWidth: number, totalHeight: number, layouts: Array }}
+ */
+export function calculatePartLayout(partsWithSources, hostWidth) {
+  if (!partsWithSources.length || hostWidth <= 0) {
+    return { totalWidth: 0, totalHeight: 0, layouts: [] };
+  }
+
+  const items = partsWithSources.map(p => {
+    const srcW = p.source?.width || 1;
+    const srcH = p.source?.height || 1;
+    const box = p.box || { x: 0, y: 0, w: 1, h: 1 };
+    const sx = Math.max(0, box.x * srcW);
+    const sy = Math.max(0, box.y * srcH);
+    const sw = Math.max(1, Math.min(srcW - sx, box.w * srcW));
+    const sh = Math.max(1, Math.min(srcH - sy, box.h * srcH));
+    return { sx, sy, sw, sh, source: p.source };
+  });
+
+  // Calculate uniform scale so line thickness and text size match across parts
+  const maxSw = Math.max(...items.map(it => it.sw), 1);
+  const uniformScale = hostWidth / maxSw;
+
+  let currentY = 0;
+  const layouts = items.map(it => {
+    const destW = Math.round(it.sw * uniformScale);
+    const destH = Math.round(it.sh * uniformScale);
+    const dx = Math.round((hostWidth - destW) / 2); // Center horizontally
+    const dy = currentY;
+    currentY += destH;
+    return {
+      sx: it.sx,
+      sy: it.sy,
+      sw: it.sw,
+      sh: it.sh,
+      dx,
+      dy,
+      destW,
+      destH,
+      drawable: it.source?.drawable,
+    };
+  });
+
+  return {
+    totalWidth: hostWidth,
+    totalHeight: Math.max(1, currentY),
+    layouts,
+  };
+}
+
 // Renders one cropped figure into hostEl and keeps the crop correct on resize.
+// Supports single-part and multi-part (cross-page) diagrams stitched vertically.
 // Returns a handle with destroy() so the runner can tear down observers.
 export function renderFigure(hostEl, figure) {
   hostEl.textContent = '';
   hostEl.className = 'figure';
 
-  if (!figure || !figure.box || typeof figure.box !== 'object') {
+  const partsList = (Array.isArray(figure?.parts) && figure.parts.length > 0)
+    ? figure.parts.map(p => ({
+        source: figure.source || 'pdf',
+        asset: figure.asset,
+        page: p.page,
+        box: p.box,
+      }))
+    : (figure && figure.box ? [figure] : []);
+
+  if (!partsList.length) {
     hostEl.appendChild(missingBox('this question has no crop box'));
     return { destroy() {} };
   }
 
-  const box = figure.box;
-  let source = null;
+  let sources = null;
   let disposed = false;
   let observer = null;
 
@@ -131,33 +200,45 @@ export function renderFigure(hostEl, figure) {
   hostEl.appendChild(status);
 
   const draw = () => {
-    if (disposed || !source) return;
+    if (disposed || !sources || !sources.length) return;
     const width = hostEl.clientWidth;
     if (width <= 0) return;
 
-    const scale = width / (box.w * source.width);
-    const dispW = source.width * scale;
-    const dispH = source.height * scale;
-    const cropW = box.w * dispW;
-    const cropH = box.h * dispH;
-    const dpr = window.devicePixelRatio || 1;
+    const partsWithSources = partsList.map((p, i) => ({
+      box: p.box,
+      source: sources[i],
+    }));
 
+    const { totalWidth, totalHeight, layouts } = calculatePartLayout(partsWithSources, width);
+    if (totalHeight <= 0) return;
+
+    const dpr = window.devicePixelRatio || 1;
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(width * dpr));
-    canvas.height = Math.max(1, Math.round(cropH * dpr));
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${cropH}px`;
+    canvas.width = Math.max(1, Math.round(totalWidth * dpr));
+    canvas.height = Math.max(1, Math.round(totalHeight * dpr));
+    canvas.style.width = `${totalWidth}px`;
+    canvas.style.height = `${totalHeight}px`;
+
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
-    ctx.drawImage(source.drawable, box.x * dispW, box.y * dispH, cropW, cropH, 0, 0, width, cropH);
+
+    for (const lay of layouts) {
+      if (lay.drawable) {
+        ctx.drawImage(
+          lay.drawable,
+          lay.sx, lay.sy, lay.sw, lay.sh,
+          lay.dx, lay.dy, lay.destW, lay.destH,
+        );
+      }
+    }
 
     hostEl.textContent = '';
     hostEl.appendChild(canvas);
   };
 
-  loadSource(figure).then(loaded => {
+  Promise.all(partsList.map(loadSource)).then(loadedSources => {
     if (disposed) return;
-    source = loaded;
+    sources = loadedSources;
     draw();
     if (typeof ResizeObserver !== 'undefined') {
       observer = new ResizeObserver(() => draw());

@@ -21,13 +21,16 @@ Then open <http://localhost:8000>.
 ## Workflow
 
 1. **Upload & Schedule (`#/new`)**:
-   - Box 1: paste the Prompt 1 questions JSON (using `gemini prompt 1 - questions.txt`).
-   - Box 2 (appears after Box 1 validates, optional): paste the Prompt 2 coordinate patch (using `gemini prompt 2 - coordinates.txt`). Matched by question `id`; unknown IDs ignored, bad boxes block with a message. Leave empty for text-only.
+   - Paste the questions JSON generated from `gemini prompt.txt`.
+   - Diagrams and figures are automatically labelled with sequential codes (`F1`, `F2`, `F3`...).
+   - If diagrams are detected, upload the exam PDF:
+     - MockCracking automatically opens a full-screen, high-speed PDF cropper.
+     - As you drag a crop box around each diagram, it auto-assigns to that question and advances to the next diagram in order.
+     - Shortcuts: `Z` (undo), `S` (skip), `← / →` (navigate), `Enter` (done).
    - If a paste contains both Paper 1 and Paper 2, MockCracking automatically separates them into individual tests.
    - Choose whether to schedule the test:
      - **Schedule OFF**: Attempt anytime with full duration.
      - **Schedule ON**: Paper remains locked until the start time. Starting late deducts time from your exam window.
-   - Attach any figure screenshots or PDFs if referenced.
 2. **Tests Dashboard (`#/tests`)**:
    - View all your scheduled and ready tests.
    - See live countdowns to test start windows.
@@ -50,5 +53,6 @@ Then open <http://localhost:8000>.
 ```bash
 node marking.test.mjs    # 68 assertions on the marking rules and Elo
 node tests.test.mjs      # tests on paper separation, schedule windows, and late deduction
+node figslots.test.mjs   # tests on figure codes extraction, ordering, and crop application
 node import-check.mjs    # verifies 0 unresolved/unused imports across src/
 ```
